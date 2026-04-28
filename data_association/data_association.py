@@ -9,11 +9,28 @@ class GNNDataAssociator:
         self.gate_threshold = gate_threshold
         self.GATE_PENALTY = 1e5
 
-    def _compute_cost_matrix(self, tracks: list, measurements: list) -> np.ndarray:
+    def compute_mahalanobis_distance(y: np.ndarray, S: np.ndarray) -> float:
+        """
+        Computes the squared Mahalanobis distance.
+
+        Args:
+            y: The innovation vector (z - h(x)), shape (N, 1)
+            S: The innovation covariance matrix, shape (N, N)
+
+        Returns:
+            float: The squared Mahalanobis distance (d^2)
+        """
+        S_inv = np.linalg.inv(S)
+
+        d_squared = y.T @ S_inv @ y
+
+        return float(np.squeeze(d_squared))
+
+    def _compute_cost_matrix(self, tracks: list, measurements: list, coord_manager) -> np.ndarray:
         """
         Computes the distance matrix between all tracks and measurements.
         Currently uses Euclidean distance as a placeholder.
-        TODO (Task 2 & 3): Replace with Mahalanobis distance.
+        TODO Need data from the coordinate frame manager.
         """
         num_tracks = len(tracks)
         num_measurements = len(measurements)
@@ -21,9 +38,14 @@ class GNNDataAssociator:
 
         for i, track in enumerate(tracks):
             for j, measurement in enumerate(measurements):
-                dx = track['x'] - measurement['x']
-                dy = track['y'] - measurement['y']
-                dist = np.sqrt(np.square(dx) + np.square(dy))
+                z = measurement['z']
+                sensor_id = measurement['sensor_id']
+                h, H, R = coord_manager.get_model(track['ekf'].X, sensor_id)
+                y, S = track.ekf.compute_innovation(z, h, H, R)
+                #dx = track['x'] - measurement['x']
+                #dy = track['y'] - measurement['y']
+                #dist = np.sqrt(np.square(dx) + np.square(dy))
+                dist = self.compute_mahalanobis_distance(y, S)
                 cost_matrix[i, j] = dist
 
         return cost_matrix
