@@ -26,7 +26,7 @@ class GNNDataAssociator:
 
         return float(np.squeeze(d_squared))
 
-    def _compute_cost_matrix(self, tracks: list, measurements: list, coord_manager) -> np.ndarray:
+    def _compute_cost_matrix(self, tracks: list, measurements: list, coord_managers: dict) -> np.ndarray:
         """
         Computes the distance matrix between all tracks and measurements.
         Currently uses Euclidean distance as a placeholder.
@@ -37,10 +37,14 @@ class GNNDataAssociator:
         cost_matrix = np.zeros((num_tracks, num_measurements))
 
         for i, track in enumerate(tracks):
+            x_pred = np.squeeze(track['ekf'].X)
             for j, measurement in enumerate(measurements):
                 z = measurement['z']
                 sensor_id = measurement['sensor_id']
-                h, H, R = coord_manager.get_model(track['ekf'].X, sensor_id)
+                manager = coord_managers[sensor_id]
+                h = manager.get_h(x_pred)
+                H = manager.get_H(x_pred)
+                R = manager.get_R()
                 y, S = track.ekf.compute_innovation(z, h, H, R)
                 #dx = track['x'] - measurement['x']
                 #dy = track['y'] - measurement['y']
