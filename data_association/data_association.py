@@ -5,8 +5,8 @@ class GNNDataAssociator:
     """
     Global Nearest Neighbor (GNN) Data Association using the Hungarian algorithm.
     """
-    def __init__(self, gate_treshold: float = 9.21):
-        self.gate_treshold = gate_treshold
+    def __init__(self, gate_threshold: float = 9.21):
+        self.gate_threshold = gate_threshold
         self.GATE_PENALTY = 1e5
 
     def _compute_cost_matrix(self, tracks: list, measurements: list) -> np.ndarray:
@@ -49,7 +49,7 @@ class GNNDataAssociator:
 
         cost_matrix = self._compute_cost_matrix(tracks, measurements)
 
-        gated_cost_matrix = np.where(cost_matrix > self.gate_treshold, self.GATE_PENALTY, cost_matrix)
+        gated_cost_matrix = np.where(cost_matrix > self.gate_threshold, self.GATE_PENALTY, cost_matrix)
 
         row_idx, col_idx = linear_sum_assignment(gated_cost_matrix)
 
