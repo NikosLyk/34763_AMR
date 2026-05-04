@@ -9,7 +9,7 @@ class GNNDataAssociator:
         self.gate_threshold = gate_threshold
         self.GATE_PENALTY = 1e5
 
-    def compute_mahalanobis_distance(y: np.ndarray, S: np.ndarray) -> float:
+    def compute_mahalanobis_distance(self, y: np.ndarray, S: np.ndarray) -> float:
         """
         Computes the squared Mahalanobis distance.
 
@@ -37,15 +37,15 @@ class GNNDataAssociator:
         cost_matrix = np.zeros((num_tracks, num_measurements))
 
         for i, track in enumerate(tracks):
-            x_pred = np.squeeze(track['ekf'].X)
+            x_pred = np.squeeze(track['ekf'].X).flatten()
             for j, measurement in enumerate(measurements):
-                z = measurement['z']
+                z = measurement['z'].flatten()
                 sensor_id = measurement['sensor_id']
                 manager = coord_managers[sensor_id]
-                h = manager.get_h(x_pred)
+                h = manager.get_h(x_pred).flatten()
                 H = manager.get_H(x_pred)
                 R = manager.get_R()
-                y, S = track.ekf.compute_innovation(z, h, H, R)
+                y, S = track['ekf'].compute_innovation(z, h, H, R)
                 #dx = track['x'] - measurement['x']
                 #dy = track['y'] - measurement['y']
                 #dist = np.sqrt(np.square(dx) + np.square(dy))
@@ -54,7 +54,7 @@ class GNNDataAssociator:
 
         return cost_matrix
 
-    def associate(self, tracks: list, measurements: list):
+    def associate(self, tracks: list, measurements: list, managers: dict):
         """
         Assigns measurements to tracks using GNN.
 
@@ -73,7 +73,7 @@ class GNNDataAssociator:
         if len(tracks) == 0:
             return [], [], list(range(len(measurements)))
 
-        cost_matrix = self._compute_cost_matrix(tracks, measurements)
+        cost_matrix = self._compute_cost_matrix(tracks, measurements, managers)
 
         gated_cost_matrix = np.where(cost_matrix > self.gate_threshold, self.GATE_PENALTY, cost_matrix)
 
