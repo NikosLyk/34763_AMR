@@ -8,6 +8,16 @@ class GNNDataAssociator:
     def __init__(self, gate_threshold: float = 9.21):
         self.gate_threshold = gate_threshold
         self.GATE_PENALTY = 1e5
+        self.sensor_status = {
+            'radar': True,
+            'camera': True,
+            'ais': True,
+            'gnss': True
+        }
+
+    def set_sensor_availability(self, sensor_id, is_available):
+        if sensor_id in self.sensor_status:
+            self.sensor_status[sensor_id] = is_available
 
     def compute_mahalanobis_distance(self, y: np.ndarray, S: np.ndarray) -> float:
         """
@@ -29,8 +39,6 @@ class GNNDataAssociator:
     def _compute_cost_matrix(self, tracks: list, measurements: list, coord_managers: dict) -> np.ndarray:
         """
         Computes the distance matrix between all tracks and measurements.
-        Currently uses Euclidean distance as a placeholder.
-        TODO Need data from the coordinate frame manager.
         """
         num_tracks = len(tracks)
         num_measurements = len(measurements)
@@ -45,7 +53,8 @@ class GNNDataAssociator:
                 h = manager.get_h(x_pred).flatten()
                 H = manager.get_H(x_pred)
                 R = manager.get_R()
-                y, S = track['ekf'].compute_innovation(z, h, H, R)
+                is_polar = sensor_id in ['radar', 'camera']
+                y, S = track['ekf'].compute_innovation(z, h, H, R, is_polar=is_polar)
                 #dx = track['x'] - measurement['x']
                 #dy = track['y'] - measurement['y']
                 #dist = np.sqrt(np.square(dx) + np.square(dy))
@@ -54,47 +63,48 @@ class GNNDataAssociator:
 
         return cost_matrix
 
-    def associate(self, tracks: list, measurements: list, managers: dict):
+
+    def associate(self, tracks, measurements, coord_managers):
         """
         Assigns measurements to tracks using GNN.
-
-        Returns:
-            matches (list of tuples): [(track_idx, meas_idx), ...]
-            unmatched_tracks (list): [track_idx, ...]
-            unmatched_measurements (list): [meas_idx, ...]
         """
+        # Filter measurements based on sensor availability flag
+        available_measurements = [
+            m for m in measurements
+            if self.sensor_status.get(m['sensor_id'], False)
+        ]
+
+        if not available_measurements:
+            return [], list(range(len(tracks))), []
+        if not tracks:
+            return [], [], list(range(len(available_measurements)))
+
+        cost_matrix = self._compute_cost_matrix(tracks, available_measurements, coord_managers)
+
+        gated_cost_matrix = np.where(cost_matrix > self.gate_threshold, self.GATE_PENALTY, cost_matrix)
+
+        # Hungarian algorithm
+        row_ind, col_ind = linear_sum_assignment(gated_cost_matrix)
+
         matches = []
         unmatched_tracks = []
         unmatched_measurements = []
 
-        if len(measurements) == 0:
-            return [], list(range(len(tracks))), []
-
-        if len(tracks) == 0:
-            return [], [], list(range(len(measurements)))
-
-        cost_matrix = self._compute_cost_matrix(tracks, measurements, managers)
-
-        gated_cost_matrix = np.where(cost_matrix > self.gate_threshold, self.GATE_PENALTY, cost_matrix)
-
-        row_idx, col_idx = linear_sum_assignment(gated_cost_matrix)
-
-        for r, c in zip(row_idx, col_idx):
+        for r, c in zip(row_ind, col_ind):
             if gated_cost_matrix[r, c] >= self.GATE_PENALTY:
                 unmatched_tracks.append(int(r))
                 unmatched_measurements.append(int(c))
             else:
                 matches.append((int(r), int(c)))
 
-        assigned_tracks = set(row_idx)
-        assigned_measurements = set(col_idx)
-
+        assigned_tracks = set(row_ind)
         for i in range(len(tracks)):
             if i not in assigned_tracks:
                 unmatched_tracks.append(i)
 
-        for j in range(len(measurements)):
-            if j not in assigned_measurements:
+        assigned_meas = set(col_ind)
+        for j in range(len(available_measurements)):
+            if j not in assigned_meas:
                 unmatched_measurements.append(j)
 
         return matches, unmatched_tracks, unmatched_measurements
